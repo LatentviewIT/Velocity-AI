@@ -23,9 +23,9 @@ This is the central repository to collate the research and development work of t
 To get a local copy up and running, follow these steps:
 
 1. **Clone the Repository**
-   \`\`\`bash
+   ```
    git clone https://github.com/LatentviewIT/Velocity-AI
-   \`\`\`
+   ```
 2. **Environment Setup**
     * **Backend:** Navigate to \`/Python\` and install necessary dependencies.
     * **Frontend:** Navigate to \`/React/vel-csv-pipeline-ui\` and run \`npm install\`.
