@@ -42,6 +42,17 @@ To maintain a clean and functional codebase, all contributors must follow these 
 * **React:** Store all the frontend scripts and snippets in the \`React/\` directory.
 ---
 
+### Naming Convention: 
+
+All lower case, _ between words
+
+* GCP assets: `vel_%project_name%_%function_longname%_%version#%` or GitHub Commits
+`vel_pma_function_001`
+
+* Data Set: `vel_pma_schema`
+
+* Tables: `vel_pma_table_name_002`
+
 ## 🛠 Version Control Practices
 
 To minimize technical debt and merge conflicts, please adhere to the following instructions. 
@@ -58,3 +69,5 @@ When working on the same file or a major feature:
 * **Modify:** Work on your modifications within this branch.
 * **Pull Request:** Raise a Pull Request (PR) for review.
 * **Review:** All PRs must be reviewed and approved by the **Project Lead** before merging into the main branch.
+
+
