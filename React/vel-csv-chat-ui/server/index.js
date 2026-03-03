@@ -2,108 +2,133 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { GoogleAuth } from "google-auth-library";
-import fetch from "node-fetch";
-
 dotenv.config();
-console.log("GOOGLE_APPLICATION_CREDENTIALS:", process.env.GOOGLE_APPLICATION_CREDENTIALS);
-
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
-
 const PORT = process.env.PORT || 8080;
-
-// Put the FULL query URL you showed in browser address bar
-// Example:
-// https://us-central1-aiplatform.googleapis.com/v1/projects/PROJECT/locations/us-central1/reasoningEngines/ENGINE_ID:query
 const BQ_AGENT_QUERY_URL = process.env.BQ_AGENT_QUERY_URL;
-const BQ_AGENT_STREAM_URL = process.env.BQ_AGENT_STREAM_URL; // optional (alt=sse endpoint)
-
+if (!BQ_AGENT_QUERY_URL) {
+    console.warn("WARNING: BQ_AGENT_QUERY_URL is not set");
+}
 const auth = new GoogleAuth({
     scopes: ["https://www.googleapis.com/auth/cloud-platform"],
 });
-
-app.get("/api/health", (req, res) => res.json({ ok: true }));
-
+app.get("/api/health", (_, res) => res.json({ ok: true }));
+async function callEngine(client, classMethod, input) {
+    const resp = await client.request({
+        url: BQ_AGENT_QUERY_URL,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        data: { classMethod, input },
+    });
+    return resp.data;
+}
+function extractAssistantText(anyObj) {
+    const obj = anyObj?.output ?? anyObj;
+    // common locations
+    const events = obj?.events ?? obj?.output?.events;
+    if (Array.isArray(events)) {
+        // scan from end for latest assistant-ish content
+        for (let i = events.length - 1; i >= 0; i--) {
+            const e = events[i];
+            const candidates = [
+                e?.content?.text,
+                e?.content,
+                e?.text,
+                e?.message?.content,
+                e?.message?.text,
+                e?.delta?.text,
+            ];
+            for (const c of candidates) {
+                if (typeof c === "string" && c.trim()) return c;
+            }
+            // sometimes content is structured
+            for (const c of candidates) {
+                if (c && typeof c === "object") return JSON.stringify(c, null, 2);
+            }
+        }
+    }
+    // sometimes there is direct output text
+    if (typeof obj?.text === "string") return obj.text;
+    if (typeof obj?.output?.text === "string") return obj.output.text;
+    return "";
+}
+async function createSessionIfNeeded(client, userId, sessionId) {
+    if (sessionId) return sessionId;
+    // Your earlier screenshots show create_session works.
+    const createResp = await callEngine(client, "create_session", { user_id: userId });
+    const sid =
+        createResp?.output?.id ||
+        createResp?.id ||
+        createResp?.output?.session_id ||
+        createResp?.session_id;
+    if (!sid) {
+        throw new Error("Failed to create session: " + JSON.stringify(createResp));
+    }
+    return sid;
+}
 /**
- * Non-streaming query
- * The safest approach: pass-through the request body to the agent query endpoint.
- * Your UI can send the exact payload you want the agent to receive.
- */
+* Try query methods / param names because different ADK apps wire these differently.
+* We attempt:
+* - async_stream_query
+* - stream_query
+* and within each, we try query field names:
+* - query
+* - user_message
+* - message
+* - text
+*/
+async function runQuery(client, userId, sessionId, userMessage) {
+    const methodsToTry = ["async_stream_query", "stream_query"];
+    const payloadsToTry = [
+        { user_id: userId, session_id: sessionId, query: userMessage },
+        { user_id: userId, session_id: sessionId, user_message: userMessage },
+        { user_id: userId, session_id: sessionId, message: userMessage },
+        { user_id: userId, session_id: sessionId, text: userMessage },
+    ];
+    let lastErr = null;
+    for (const m of methodsToTry) {
+        for (const input of payloadsToTry) {
+            try {
+                const resp = await callEngine(client, m, input);
+                return { method: m, input, resp };
+            } catch (e) {
+                lastErr = e;
+                // continue trying other combinations
+            }
+        }
+    }
+    // surface the last useful error
+    const errData = lastErr?.response?.data || lastErr?.message || String(lastErr);
+    throw new Error(typeof errData === "string" ? errData : JSON.stringify(errData));
+}
 app.post("/api/query", async (req, res) => {
     try {
-        if (!BQ_AGENT_QUERY_URL) {
-            return res.status(500).json({ error: "BQ_AGENT_QUERY_URL not configured" });
-        }
-
-        console.log("HIT /api/query");
         const client = await auth.getClient();
-        const authHeaders = await client.getRequestHeaders();
-
-        console.log("Auth Keys:", Object.keys(authHeaders));
-        console.log("Auth Header Present:", !!(authHeaders.Authorization || authHeaders.authorization));
-        console.log("Auth Heade Sample:", (authHeaders.Authorization || authHeaders.authorization || "").slice(0, 20));
-        console.log("Auth header present?", !!authHeaders.authorization);
-
-        const upstream = await fetch(BQ_AGENT_QUERY_URL, {
-            method: "POST",
-            headers: {
-                ...authHeaders,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify(req.body),
+        const userId = req.body.user_id || "web-user-1";
+        let sessionId = req.body.session_id || "test-session";
+        const userMessage = req.body.user_message;
+        if (!userMessage || !String(userMessage).trim()) {
+            return res.status(400).json({ error: "user_message is required" });
+        }
+        // 1) Run query directly
+        const payload = { session_id: sessionId, query: userMessage };
+        const queryResp = await callEngine(client, "query", payload);
+        
+        const assistantText = extractAssistantText(queryResp);
+        return res.json({
+            session_id: sessionId,
+            assistant_text: assistantText || "",
+            raw: queryResp, // keep for debugging
+            debug_used: { method: "query", input: payload }, 
         });
-
-        const text = await upstream.text();
-        res.status(upstream.status).type("application/json").send(text);
     } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: String(e) });
+        const errData = e?.response?.data || e?.message || String(e);
+        return res.status(e?.response?.status || 500).json({ error: errData });
     }
 });
-
-
-/**
- * Streaming proxy (SSE)
- * If your Agent Engine provides a streamQuery URL (?alt=sse), we pipe it through.
- */
-
-
-app.post("/api/stream", async (req, res) => {
-    try {
-        if (!BQ_AGENT_STREAM_URL) {
-            return res.status(500).json({ error: "BQ_AGENT_STREAM_URL not configured" });
-        }
-        console.log("HIT /api/strem");
-        const client = await auth.getClient();
-        const authHeaders = await client.getRequestHeaders();
-
-        console.log("Stream auth header present?", !!authHeaders.authorization);
-
-        const upstream = await fetch(BQ_AGENT_STREAM_URL, {
-            method: "POST",
-            headers: {
-                ...authHeaders,
-                "Content-Type": "application/json",
-                "Accept": "text/event-stream",
-            },
-            body: JSON.stringify(req.body),
-        });
-
-        res.status(upstream.status);
-        res.setHeader("Content-Type", "text/event-stream");
-        res.setHeader("Cache-Control", "no-cache");
-        res.setHeader("Connection", "keep-alive");
-
-        upstream.body.on("data", (chunk) => res.write(chunk));
-        upstream.body.on("end", () => res.end());
-        upstream.body.on("error", () => res.end());
-
-    } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: String(e) });
-    }
+app.listen(PORT, () => {
+    console.log(`Server listening on ${PORT}`);
+    console.log(`BQ_AGENT_QUERY_URL: ${BQ_AGENT_QUERY_URL}`);
 });
-
-
-app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
