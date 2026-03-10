@@ -1,4 +1,24 @@
-# /home/sreekiran_reghunadh/RAG-data/create_and_upload_data_RAG_corpus.py
+#Python script testing uploading a given google drive file to add to the RAG engine corpus of Vertex AI automatically. 
+
+# Please upload a .env file with the following environments:
+'''
+# Google Cloud Configuration
+GOOGLE_CLOUD_PROJECT="project-nirvana-405904"
+GOOGLE_CLOUD_LOCATION="europe-west2"
+GOOGLE_CLOUD_QUOTA_PROJECT="project-nirvana-405904"
+'''
+
+# package dependencies
+'''
+# Google Cloud Vertex AI client libraries.
+vertexai
+google-cloud-aiplatform # Often installed with `vertexai` but good to be explicit
+google-generativeai # For direct interaction with Generative AI models
+# The `google-adk` library appears to be an internal Google library based on the paths,
+
+# For loading environment variables from a .env file 
+python-dotenv
+'''
 
 import os
 import io
