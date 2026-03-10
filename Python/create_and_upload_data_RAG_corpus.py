@@ -1,4 +1,4 @@
-### work in progress -> authentication to be setup correctly (.env file to be added by the user)
+# /home/sreekiran_reghunadh/RAG-data/create_and_upload_data_RAG_corpus.py
 
 import os
 import io
@@ -107,16 +107,11 @@ def export_google_doc_locally(drive_service, doc_id, output_path, mime_type='app
         logger.error(f"An unexpected error occurred during Google Doc export: {e}", exc_info=True)
         raise
 
-# Placeholder for your RAG-related functions
-# Assume 'rag' is an initialized client for Vertex AI RAG Engine
-# from vertexai.preview.rag import rag_data as rag # Example import
-# Make sure to initialize this client appropriately in your main() function
-
 def list_corpus_files(rag_client, corpus_name):
     """Lists files within a given RAG corpus."""
     logger.info(f"Attempting to list files in RAG corpus: {corpus_name}")
     try:
-        # This is where your previous error occurred
+        
         files = list(rag_client.list_files(corpus_name=corpus_name))
         if files:
             logger.info(f"Found {len(files)} files in corpus '{corpus_name}':")
@@ -150,9 +145,6 @@ def main():
     # Initialize Google Drive service
     drive_service = get_drive_service()
 
-    # Initialize Vertex AI RAG client (replace with your actual initialization)
-    # This example assumes you're using vertexai.preview.rag.rag_data
-    # Make sure to set project and location for Vertex AI client initialization
     import vertexai
     vertexai.init(project=GOOGLE_CLOUD_PROJECT, location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"))
     from vertexai.preview.rag import rag_data as rag_client
@@ -174,8 +166,8 @@ def main():
         logger.critical(f"Fatal error with RAG corpus management: {e}", exc_info=True)
         exit(1)
 
-    # Example: Export a Google Doc
-    google_doc_id = "1H-JGRDZt9LA7rxyE1cJrCaNkPakI-O7xMjgXCiMm-U"
+    # Example: Export a Google Doc (change the link for testing other docs)
+    google_doc_id = "1H-JGRDZt9LAJ7rxyE1cJrCaNkPakI-O7xMjgXCiMm-U"
     local_output_file = "/tmp/exported_doc.pdf"
 
     try:
@@ -190,15 +182,9 @@ def main():
         logger.critical(f"Failed to export Google Doc: {e}", exc_info=True)
         exit(1)
 
-    # Example: Upload the exported file to the RAG corpus
-    # (Assuming your RAG client has an upload method)
-    # This part needs to be adapted to your actual RAG upload logic
     try:
-        # Placeholder: This is where you would call your RAG client's upload method
-        # Example: rag_client.upload_file(corpus_name=corpus.name, file_path=local_file_path)
+        rag_client.upload_file(corpus_name=corpus.name, path=local_output_file, display_name="IIS_from_python")
         logger.info(f"Simulating upload of {local_output_file} to RAG corpus '{corpus.display_name}'.")
-        # In a real scenario, you'd have an actual upload call here.
-        # For now, let's just log a success message.
         logger.info("File upload to RAG corpus simulation successful.")
     except Exception as e:
         logger.error(f"Error uploading {local_output_file} to RAG corpus: {e}", exc_info=True)
